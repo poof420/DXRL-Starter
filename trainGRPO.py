@@ -130,23 +130,29 @@ def gsm8k_reward_function(prompts, completions, answer, **kwargs):
 # Dataset Preparation
 # ============================================================================
 
-def prepare_dataset(dataset):
+def prepare_dataset(dataset, tokenizer):
     """
     Prepare the GSM8K dataset for GRPO training.
     Formats the questions as prompts with instruction.
     """
-    def format_example(example):
-        # Format the prompt with instruction
-        prompt = f"Please solve this math problem step by step: {example['question']}\n\nPlease put your final answer in \\boxed{{}} format."
-        return {
+    formatted_examples = []
+    for example in dataset:
+        user_message = f"Please solve this math problem step by step: {example['question']}\n\nPlease put your final answer in \\boxed{{}} format."
+        messages = [
+            {"role": "user", "content": user_message}
+        ]
+        prompt = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=True  # Enable thinking mode for complex math reasoning
+        )
+        formatted_examples.append({
             "prompt": prompt,
             "question": example['question'],
             "answer": example['answer']
-        }
-    
-    # Apply formatting
-    formatted_dataset = dataset.map(format_example)
-    
+        })
+    formatted_dataset = formatted_examples
     return formatted_dataset
 
 
@@ -169,18 +175,7 @@ def main():
     print(f'Training set size: {len(train_dataset)}')
     print(f'Test set size: {len(eval_dataset)}\n')
 
-    # Prepare datasets
-    print("Preparing datasets...")
-    train_dataset = prepare_dataset(train_dataset)
-    eval_dataset = prepare_dataset(eval_dataset)
-    
-    # Show a sample
-    sample = train_dataset[0]
-    print("Sample from prepared dataset:")
-    print(f"Prompt: {sample['prompt'][:200]}...")
-    print(f"Answer: {sample['answer']}\n")
-    print("-" * 80 + "\n")
-    
+
     # Initialize tokenizer
     print("\nLoading tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True, model_max_length=6144)
@@ -188,6 +183,18 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
     # Set padding side to left for generation
     tokenizer.padding_side = 'left'
+
+    # Prepare datasets
+    print("Preparing datasets...")
+    train_dataset = prepare_dataset(train_dataset, tokenizer)
+    eval_dataset = prepare_dataset(eval_dataset, tokenizer)
+    
+    # Show a sample
+    sample = train_dataset[0]
+    print("Sample from prepared dataset:")
+    print(f"Prompt: {sample['prompt'][:200]}...")
+    print(f"Answer: {sample['answer']}\n")
+    print("-" * 80 + "\n")
     
     # Create GRPO configuration
     training_args = GRPOConfig(
@@ -200,15 +207,15 @@ def main():
         gradient_accumulation_steps=8,
         learning_rate=5e-6,
         num_train_epochs=1,
-        warmup_steps=100,
+        warmup_steps=10,
         
         # Logging and saving
-        logging_steps=10,
-        save_steps=500,
+        logging_steps=1,
+        save_steps=150,
         eval_steps=None,     # Change from 500 to None
         
         # Generation parameters
-        num_generations=4,
+        num_generations=8,
         temperature=0.6,
         top_p=0.95,
         top_k=20,
@@ -241,9 +248,6 @@ def main():
         wandb_log_unique_prompts=True,
         run_name=f"grpo-{MODEL_NAME.split('/')[-1]}_gsm8k",
         mask_truncated_completions=True,
-        generation_kwargs={
-            "min_length": 100,  # Force at least 100 tokens
-        },
         repetition_penalty=1.1,  # Penalize repetition, may affect length
     )
     

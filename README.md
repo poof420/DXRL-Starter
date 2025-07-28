@@ -42,11 +42,7 @@ sudo apt-get install python3-dev python3.12-dev
 ## 2  Install **pyenv** (Python version / venv manager)
 
 ```bash
-curl https://pyenv.run | bash
-
-# Add pyenv to your shell (bash or zsh):
-echo -e '\n# ↳ pyenv\nexport PYENV_ROOT="$HOME/.pyenv"\nexport PATH="$PYENV_ROOT/bin:$PATH"\neval "$(pyenv init --path)"\neval "$(pyenv init -)"' >> ~/.bashrc
-source ~/.bashrc
+    apt install python3.12-venv
 ```
 
 > We already have **Python 3.12.3** system‑wide, but pyenv lets us isolate project envs and pin micro‑versions as needed. ([Medium][1])
@@ -56,9 +52,8 @@ source ~/.bashrc
 ## 3  Create a clean Python 3.12 env for training
 
 ```bash
-pyenv install 3.12.3    # optional – match system Python exactly
-pyenv virtualenv 3.12.3 grpo-env
-pyenv activate grpo-env
+python3 -m venv venv
+source venv/bin/activate
 python -m pip install --upgrade pip wheel setuptools
 ```
 

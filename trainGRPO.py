@@ -11,6 +11,8 @@ from trl import GRPOConfig, GRPOTrainer
 import wandb
 from typing import List, Dict, Tuple, Optional
 import re
+import os
+
 
 
 # ============================================================================
@@ -20,6 +22,13 @@ import re
 MODEL_NAME = "Qwen/Qwen3-0.6B"
 OUTPUT_DIR = "./grpo_GSM8K_0.6B"
 WANDB_PROJECT = "grpo_class_GSM8K"
+os.environ["WANDB_PROJECT"] = WANDB_PROJECT
+os.environ["RANK"] = "0"
+os.environ["WORLD_SIZE"] = "1"
+os.environ["MASTER_ADDR"] = "localhost"
+os.environ["MASTER_PORT"] = "12345"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["LOCAL_RANK"] = "0"
 
 
 # ============================================================================
@@ -103,9 +112,15 @@ def gsm8k_reward_function(prompts, completions, answer, **kwargs):
     """
     rewards = []
     
+    # Handle case where answer might be repeated for multiple generations
+    answers_list = answer
+    if len(answer) != len(completions):
+        # Repeat answers to match completions if needed
+        answers_list = answer * (len(completions) // len(answer))
+    
     for i in range(len(completions)):
         # Calculate reward for this completion
-        reward = calculate_reward_score(completions[i], answer[i])
+        reward = calculate_reward_score(completions[i], answers_list[i % len(answer)])
         rewards.append(reward)
     
     return rewards
@@ -180,6 +195,8 @@ def main():
         
         # Basic training parameters
         per_device_train_batch_size=2,
+        per_device_eval_batch_size=2,  # Reduce from 4 to 1
+        eval_accumulation_steps=8,
         gradient_accumulation_steps=8,
         learning_rate=5e-6,
         num_train_epochs=1,
@@ -188,37 +205,33 @@ def main():
         # Logging and saving
         logging_steps=10,
         save_steps=500,
-        eval_steps=500,
+        eval_steps=None,     # Change from 500 to None
         
         # Generation parameters
-        num_generations=8,
+        num_generations=4,
         temperature=0.6,
         top_p=0.95,
         top_k=20,
         max_prompt_length=2048,
-        max_completion_length=4096,
+        max_completion_length=1024,  # Reduce from 4096
         
         # vLLM configuration
         use_vllm=True,
         vllm_mode="colocate",
         vllm_tensor_parallel_size=1,
-        vllm_gpu_memory_utilization=0.5,
+        vllm_gpu_memory_utilization=0.15,
         
         # GRPO specific parameters
         beta=0.0,  # No KL penalty as recommended in recent papers
         epsilon=0.2,  # Standard epsilon value
-        epsilon_high=0.4,  # Higher epsilon for upper bound
-        scale_rewards=False,  # Don't scale rewards to avoid difficulty bias
+        epsilon_high=0.28,  # Higher epsilon for upper bound
         loss_type="dr_grpo",  # Use dr_grpo loss type to eliminate length bias
-        mask_truncated_completions=True,  # Mask truncated completions for stability
         
         # Optimization
         bf16=True,
         tf32=True,
         gradient_checkpointing=True,
         dataloader_num_workers=8,
-        
-        # Use Liger kernel for efficiency
         use_liger_kernel=True,
         
         # Tracking
@@ -226,7 +239,12 @@ def main():
         log_completions=True,
         num_completions_to_print=2,
         wandb_log_unique_prompts=True,
-        run_name=f"grpo-{MODEL_NAME.split('/')[-1]}_gsm8k"
+        run_name=f"grpo-{MODEL_NAME.split('/')[-1]}_gsm8k",
+        mask_truncated_completions=True,
+        generation_kwargs={
+            "min_length": 100,  # Force at least 100 tokens
+        },
+        repetition_penalty=1.1,  # Penalize repetition, may affect length
     )
     
     # Initialize trainer
@@ -246,9 +264,9 @@ def main():
     print(f"Using vLLM in '{training_args.vllm_mode}' mode on {torch.cuda.device_count()} GPUs.")
     
     # Initial evaluation
-    print("\n📊 Running initial evaluation...")
-    eval_results = trainer.evaluate()
-    print("Initial evaluation results:", eval_results)
+    # print("\n📊 Running initial evaluation...")
+    # eval_results = trainer.evaluate()
+    # print("Initial evaluation results:", eval_results)
     
     # Train the model
     trainer.train()

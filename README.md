@@ -31,7 +31,11 @@ sudo apt install -y build-essential pkg-config git curl wget ca-certificates \
   libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
   libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev \
   liblzma-dev ninja-build
+
+sudo apt-get install python3-dev python3.12-dev
 ```
+
+
 
 ---
 
@@ -112,6 +116,8 @@ pip install flash-attn --no-build-isolation     # fastest path
 #   or, if you need FlashAttention‑3 for Hopper/H100:
 # git clone https://github.com/Dao-AILab/flash-attention.git && cd flash-attention
 # python setup.py install
+#then lets do liger kernel for some extra speed and memory savings...
+pip install liger-kernel
 ```
 
 > Flash‑Attn 2.8+ targets CUDA ≥ 12.3, with 12.8 recommended for best perf. ([PyPI][4])

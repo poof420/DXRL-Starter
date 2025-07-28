@@ -13,6 +13,8 @@
 !.gitlab-ci.yml
 !.travis.yml
 
+.pyenv/
+
 # Environment variables
 .env
 .env.local
@@ -214,4 +216,14 @@ temp/
 .connect.lock
 .lock-wscript
 package-lock.json.*.backup
-yarn.lock.*.backup 
+yarn.lock.*.backup
+
+# GRPO Training Outputs
+grpo_GSM*K_0.6B/
+grpo_GSM*K_*/
+**/grpo_GSM*K_*/
+
+# Weights & Biases
+wandb/
+**/wandb/
+wandb-*.log 

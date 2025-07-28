@@ -224,7 +224,7 @@ def main():
         use_vllm=True,
         vllm_mode="colocate",
         vllm_tensor_parallel_size=1,
-        vllm_gpu_memory_utilization=0.15,
+        vllm_gpu_memory_utilization=0.25,
         
         # GRPO specific parameters
         beta=0.0,  # No KL penalty as recommended in recent papers

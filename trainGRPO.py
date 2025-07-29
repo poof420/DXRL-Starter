@@ -65,11 +65,9 @@ def calculate_reward_score(model_response, expected_answer_text):
     Calculate reward for model response.
     - 0.9 points for correct answer
     - 0.1 points for using \boxed{} format
-    - Penalty up to -0.5 * (length of prompt - max_prompt_length)^2 / max_prompt_length if prompt is too long
+    - Length bonus up to 0.2 points for concise answers after thinking
     Returns: total_reward
     """
-    max_prompt_length = 2048
-
     # Extract expected answer
     expected_answer = extract_dataset_answer(expected_answer_text)
     if expected_answer is None:
@@ -83,20 +81,42 @@ def calculate_reward_score(model_response, expected_answer_text):
     model_answer = extract_model_answer(model_response)
     if model_answer is None:
         base_reward = format_reward  # Only format reward if no answer found
+        length_bonus = 0.0  # No length bonus without an answer
     else:
         # Check correctness
         is_correct = (model_answer == expected_answer)
         correctness_reward = 0.9 if is_correct else 0.0
         base_reward = correctness_reward + format_reward
+        
+        # Compute length bonus based on answer section after </think>
+        think_end_pattern = r'</think>'
+        think_end_match = re.search(think_end_pattern, model_response)
+        
+        if think_end_match:
+            # Get the text after </think>
+            answer_section = model_response[think_end_match.end():]
+            answer_length = len(answer_section.strip())
+            
+            # Give bonus for concise answers
+            # Ideal answer length is around 50-150 characters
+            # Max bonus at 50 chars, linear decrease to 0 at 500 chars
+            if answer_length <= 50:
+                length_bonus = 0.2
+            elif answer_length <= 500:
+                length_bonus = 0.2 * (500 - answer_length) / 450
+            else:
+                length_bonus = 0.0
+        else:
+            # No thinking tag found, use original response length with stricter limits
+            answer_length = len(model_response.strip())
+            if answer_length <= 200:
+                length_bonus = 0.1
+            elif answer_length <= 1000:
+                length_bonus = 0.1 * (1000 - answer_length) / 800
+            else:
+                length_bonus = 0.0
 
-    # Compute prompt length penalty
-    prompt_length = len(expected_answer_text)
-    if prompt_length > max_prompt_length:
-        penalty = -0.5 * ((prompt_length - max_prompt_length) ** 2) / max_prompt_length
-    else:
-        penalty = 0.0
-
-    total_reward = base_reward + penalty
+    total_reward = base_reward + length_bonus
     
     return total_reward
 
@@ -145,7 +165,7 @@ def prepare_dataset(dataset, tokenizer):
     """
     formatted_examples = []
     for example in dataset:
-        user_message = f"Please solve this math problem step by step: {example['question']}\n\nPlease put your final answer in \\boxed{{}} format. Like please shut the fuck up and think about it and then once that thinking tag is over, you must just give me that fucking answer in the box format."
+        user_message = f"Please solve this math problem step by step: {example['question']}\n\nThink through the problem carefully, then provide your final answer in \\boxed{{}} format. Be concise in your final answer after thinking."
         messages = [
             {"role": "user", "content": user_message}
         ]
@@ -240,7 +260,7 @@ def main():
         beta=0.0,  # No KL penalty as recommended in recent papers
         epsilon=0.2,  # Standard epsilon value
         epsilon_high=0.28,  # Higher epsilon for upper bound
-        loss_type="dr_grpo",  # Use dr_grpo loss type to eliminate length bias
+        loss_type="bnpo",  # Use dr_grpo loss type to eliminate length bias
         
         # Optimization
         bf16=True,
@@ -254,7 +274,7 @@ def main():
         log_completions=True,
         num_completions_to_print=2,
         wandb_log_unique_prompts=True,
-        run_name=f"grpo-{MODEL_NAME.split('/')[-1]}_gsm8k-poof",
+        run_name=f"grpo-{MODEL_NAME.split('/')[-1]}_poof_bnpo",
         mask_truncated_completions=True,
         repetition_penalty=1.1,  # Penalize repetition, may affect length
     )

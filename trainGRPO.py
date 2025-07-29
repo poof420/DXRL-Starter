@@ -17,8 +17,8 @@ import os
 # Configuration
 # ============================================================================
 
-MODEL_NAME = "Qwen/Qwen3-0.6B"
-OUTPUT_DIR = "./grpo_GSM8K_0.6B"
+MODEL_NAME = "Qwen/Qwen3-1.7B"
+OUTPUT_DIR = "./grpo_GSM8K_1.7B-poof"
 WANDB_PROJECT = "grpo_class_GSM8K"
 os.environ["WANDB_PROJECT"] = WANDB_PROJECT
 os.environ["RANK"] = "0"
@@ -65,28 +65,38 @@ def calculate_reward_score(model_response, expected_answer_text):
     Calculate reward for model response.
     - 0.9 points for correct answer
     - 0.1 points for using \boxed{} format
+    - Penalty up to -0.5 * (length of prompt - max_prompt_length)^2 / max_prompt_length if prompt is too long
     Returns: total_reward
     """
+    max_prompt_length = 2048
+
     # Extract expected answer
     expected_answer = extract_dataset_answer(expected_answer_text)
     if expected_answer is None:
         return 0.0
-    
+
     # Check if model used boxed format
     has_boxed_format = bool(re.search(r'\\boxed\{[^}]+\}', model_response))
     format_reward = 0.1 if has_boxed_format else 0.0
-    
+
     # Extract model's answer
     model_answer = extract_model_answer(model_response)
     if model_answer is None:
-        return format_reward  # Only format reward if no answer found
-    
-    # Check correctness
-    is_correct = (model_answer == expected_answer)
-    correctness_reward = 0.9 if is_correct else 0.0
-    
-    # Total reward
-    total_reward = correctness_reward + format_reward
+        base_reward = format_reward  # Only format reward if no answer found
+    else:
+        # Check correctness
+        is_correct = (model_answer == expected_answer)
+        correctness_reward = 0.9 if is_correct else 0.0
+        base_reward = correctness_reward + format_reward
+
+    # Compute prompt length penalty
+    prompt_length = len(expected_answer_text)
+    if prompt_length > max_prompt_length:
+        penalty = -0.5 * ((prompt_length - max_prompt_length) ** 2) / max_prompt_length
+    else:
+        penalty = 0.0
+
+    total_reward = base_reward + penalty
     
     return total_reward
 
@@ -135,7 +145,7 @@ def prepare_dataset(dataset, tokenizer):
     """
     formatted_examples = []
     for example in dataset:
-        user_message = f"Please solve this math problem step by step: {example['question']}\n\nPlease put your final answer in \\boxed{{}} format."
+        user_message = f"Please solve this math problem step by step: {example['question']}\n\nPlease put your final answer in \\boxed{{}} format. Like please shut the fuck up and think about it and then once that thinking tag is over, you must just give me that fucking answer in the box format."
         messages = [
             {"role": "user", "content": user_message}
         ]
@@ -203,7 +213,7 @@ def main():
         per_device_eval_batch_size=2,  # Reduce from 4 to 1
         eval_accumulation_steps=8,
         gradient_accumulation_steps=8,
-        learning_rate=5e-6,
+        learning_rate=2e-6,
         num_train_epochs=1,
         warmup_steps=10,
         
@@ -218,7 +228,7 @@ def main():
         top_p=0.95,
         top_k=20,
         max_prompt_length=2048,
-        max_completion_length=1024,  # Reduce from 4096
+        max_completion_length=2048,  # Reduce from 4096
         
         # vLLM configuration
         use_vllm=True,
@@ -244,7 +254,7 @@ def main():
         log_completions=True,
         num_completions_to_print=2,
         wandb_log_unique_prompts=True,
-        run_name=f"grpo-{MODEL_NAME.split('/')[-1]}_gsm8k",
+        run_name=f"grpo-{MODEL_NAME.split('/')[-1]}_gsm8k-poof",
         mask_truncated_completions=True,
         repetition_penalty=1.1,  # Penalize repetition, may affect length
     )
